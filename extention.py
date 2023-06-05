@@ -51,6 +51,7 @@ def readRGBImageToSeparatePixelArrays(input_filename):
         pixel_array_b.append(pixel_row_b)
 
     image = mpimg.imread(input_filename) 
+  
     return (image_width, image_height, pixel_array_r, pixel_array_g, pixel_array_b,image)
 
 
@@ -68,9 +69,10 @@ def computeRGBToGreyscale(pixel_array_r, pixel_array_g, pixel_array_b, image_wid
     
     for i in range(image_height):
         for j in range(image_width):
-            greyscale_value = round(0.299 * pixel_array_r[i][j] + 0.587 * pixel_array_g[i][j] + 0.114 * pixel_array_b[i][j])
-            greyscale_pixel_array[i][j] = greyscale_value
-
+            
+                greyscale_value = round(0.299 * pixel_array_r[i][j] + 0.587 * pixel_array_g[i][j] + 0.114 * pixel_array_b[i][j])
+                greyscale_pixel_array[i][j] = greyscale_value
+           
     return greyscale_pixel_array
 
 def scaleTo0And255AndQuantize(pixel_array, image_width, image_height):
@@ -319,12 +321,12 @@ def computeBoundaryBox(ccimg, ccdict, image_width, image_height):
     largest_component = max(ccdict, key=ccdict.get)
     # sort ccdict by keyvalue
 
-    barcode_box = None
-    density = 0
-    area = 0
+    barcode_box = []
+    density = 0.70
+  
     sorted_ccsizes = sorted(ccdict.items(), key=lambda x: x[1], reverse=True)
 
-    for key, value in sorted_ccsizes[:6]:
+    for key, value in sorted_ccsizes:
            
 
             min_x = image_width
@@ -348,10 +350,9 @@ def computeBoundaryBox(ccimg, ccdict, image_width, image_height):
             tempdensity = value / temparea
           
             ratio = length / breadth
-            if ratio <= 1.8 and area < temparea and density<tempdensity: 
-                barcode_box = (min_x, min_y, max_x, max_y)
-                density = tempdensity
-                area = temparea
+            if  density<tempdensity and ((length >50)):
+                barcode_box.append([min_x, min_y, max_x, max_y])
+                # area = temparea
                     
     return barcode_box
 
@@ -371,7 +372,7 @@ def main():
     SHOW_DEBUG_FIGURES = True
 
     # this is the default input image filename
-    filename = "Barcode1"
+    filename = "Multiple_barcodes3"
     input_filename = "images/"+filename+".png"
 
     if command_line_arguments != []:
@@ -390,7 +391,7 @@ def main():
     # we read in the png file, and receive three pixel arrays for red, green and blue components, respectively
     # each pixel array contains 8 bit integer values between 0 and 255 encoding the color values
     (image_width, image_height, px_array_r, px_array_g, px_array_b, orignal_image) = readRGBImageToSeparatePixelArrays(input_filename)
-
+ 
     # setup the plots for intermediate results in a figure
    
     fig1, axs1 = pyplot.subplots(2, 2,figsize=(8, 8))
@@ -408,7 +409,7 @@ def main():
     # convert the image to greyscale and normalize 
     greyscale = computeRGBToGreyscale(px_array_r, px_array_g, px_array_b, image_width, image_height)
     scaled_greyscale  = scaleTo0And255AndQuantize(greyscale, image_width, image_height)
-    
+
     # horizontal_edges = computeHorizontalEdgesSobelAbsolute(scaled_greyscale, image_width, image_height)
     # verticle_edges = computeVerticalEdgesSobelAbsolute(scaled_greyscale, image_width, image_height)
     # edge_magnitude = computeEdgeMagnitude(horizontal_edges, verticle_edges, image_width, image_height)
@@ -418,22 +419,22 @@ def main():
     #apply standard deviation 
     standard_deviation = computeStandardDeviationImage5x5(scaled_greyscale, image_width, image_height)
     #Apply Gaussian blur
-    for i in range(6):
+    for i in range(4):
         box_filter = computeGaussianAveraging3x3RepeatBorder(standard_deviation, image_width, image_height) # returns new greyscale array
         standard_deviation = box_filter
    
-    convert_to_binary = computeThresholdGE(standard_deviation, 20, image_width, image_height)
+    convert_to_binary = computeThresholdGE(standard_deviation, 25, image_width, image_height)
 
-    for j in range(4):
+    for j in range(3):
         eroded_image = computeErosion8Nbh5x5FlatSE(convert_to_binary, image_width, image_height)
         convert_to_binary = eroded_image
     
-    for k in range(4):
+    for k in range(6):
         dialated_image = computeDilation8Nbh5x5FlatSE(eroded_image, image_width, image_height)
         eroded_image = dialated_image
     ccimage ,ccsizes= computeConnectedComponentLabeling(dialated_image, image_width, image_height)
-    bbox_min_x,bbox_min_y,bbox_max_x,bbox_max_y = computeBoundaryBox(ccimage, ccsizes,image_width, image_height)
-   
+    boxes = computeBoundaryBox(ccimage, ccsizes,image_width, image_height)
+    
     px_array = orignal_image
  
 
@@ -441,9 +442,11 @@ def main():
     # Draw a bounding box as a rectangle into the input image
     axs1[1, 1].set_title('Final image of detection')
     axs1[1, 1].imshow(px_array, cmap='gray')
-    rect = Rectangle((bbox_min_x, bbox_min_y), bbox_max_x - bbox_min_x, bbox_max_y - bbox_min_y, linewidth=1,
-                     edgecolor='g', facecolor='none')
-    axs1[1, 1].add_patch(rect)
+    for box in boxes:
+        bbox_min_x,bbox_min_y,bbox_max_x,bbox_max_y = box 
+        rect = Rectangle((bbox_min_x, bbox_min_y), bbox_max_x - bbox_min_x, bbox_max_y - bbox_min_y, linewidth=1,
+                        edgecolor='g', facecolor='none')
+        axs1[1, 1].add_patch(rect)
 
     # write the output image into output_filename, using the matplotlib savefig method
     extent = axs1[1, 1].get_window_extent().transformed(fig1.dpi_scale_trans.inverted())
